@@ -1,0 +1,158 @@
+@import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600;9..144,700&family=Manrope:wght@400;500;600;700;800&display=swap');
+@import 'tailwindcss';
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --font-sans: 'Manrope', sans-serif;
+  --font-display: 'Fraunces', serif;
+}
+
+:root {
+  color-scheme: light;
+  --bg: #f5f2eb;
+  --surface: rgba(255, 255, 255, 0.78);
+  --surface-muted: rgba(250, 246, 240, 0.92);
+  --border-strong: rgba(148, 128, 103, 0.18);
+  --border-subtle: rgba(148, 128, 103, 0.12);
+  --text-primary: #1d2533;
+  --text-secondary: #576070;
+  --text-muted: #7e8897;
+  --accent: #204f8f;
+  --accent-soft: rgba(32, 79, 143, 0.1);
+  --accent-border: rgba(32, 79, 143, 0.28);
+  --focus-ring: rgba(32, 79, 143, 0.26);
+  --shadow-card:
+    0 24px 60px rgba(22, 33, 56, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.34);
+}
+
+.dark {
+  color-scheme: dark;
+  --bg: #0f151e;
+  --surface: rgba(19, 27, 39, 0.82);
+  --surface-muted: rgba(27, 37, 53, 0.88);
+  --border-strong: rgba(138, 162, 204, 0.18);
+  --border-subtle: rgba(138, 162, 204, 0.12);
+  --text-primary: #ecf4ff;
+  --text-secondary: #bac6d7;
+  --text-muted: #7d8ea6;
+  --accent: #8ac6ff;
+  --accent-soft: rgba(138, 198, 255, 0.14);
+  --accent-border: rgba(138, 198, 255, 0.28);
+  --focus-ring: rgba(138, 198, 255, 0.28);
+  --shadow-card:
+    0 26px 60px rgba(1, 7, 16, 0.38),
+    inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+html {
+  font-family: var(--font-sans);
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  background: var(--bg);
+  color: var(--text-primary);
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+button,
+input,
+select {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+.action-pill {
+  @apply inline-flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-border)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)];
+}
+
+.toolbar-button {
+  @apply inline-flex h-10 min-w-10 items-center justify-center rounded-2xl border border-transparent bg-transparent px-3 text-sm font-semibold text-[var(--text-secondary)] transition hover:border-[var(--accent-border)] hover:bg-[var(--surface-muted)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)];
+}
+
+.toolbar-button[data-active='true'] {
+  @apply border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--text-primary)];
+}
+
+.tiptap {
+  min-height: 26rem;
+  outline: none;
+  color: var(--text-primary);
+}
+
+.tiptap p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  float: left;
+  height: 0;
+  pointer-events: none;
+  color: var(--text-muted);
+}
+
+.tiptap > * + * {
+  margin-top: 0.9rem;
+}
+
+.tiptap h1,
+.tiptap h2,
+.tiptap h3 {
+  font-family: var(--font-display);
+  line-height: 1.12;
+  letter-spacing: -0.04em;
+  color: var(--text-primary);
+}
+
+.tiptap h1 {
+  font-size: clamp(2rem, 3vw, 2.8rem);
+}
+
+.tiptap h2 {
+  font-size: clamp(1.6rem, 2.5vw, 2.15rem);
+}
+
+.tiptap h3 {
+  font-size: clamp(1.3rem, 2vw, 1.7rem);
+}
+
+.tiptap p,
+.tiptap li {
+  font-size: 1.05rem;
+  line-height: 1.8;
+}
+
+.tiptap ul,
+.tiptap ol {
+  padding-left: 1.4rem;
+}
+
+.tiptap blockquote {
+  border-left: 3px solid var(--accent-border);
+  margin: 1.1rem 0;
+  padding-left: 1rem;
+  color: var(--text-secondary);
+}
+
+.tiptap hr {
+  border: 0;
+  border-top: 1px solid var(--border-subtle);
+  margin: 1.25rem 0;
+}
+
+.tiptap a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-decoration-thickness: 0.08em;
+  text-underline-offset: 0.16em;
+}
+
+.tiptap ::selection {
+  background: rgba(138, 198, 255, 0.22);
+}
