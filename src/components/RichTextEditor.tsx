@@ -5,6 +5,8 @@ import {
   useRef,
 } from 'react'
 import { EditorContent, useEditor } from '@tiptap/react'
+import { Plugin, PluginKey } from '@tiptap/pm/state'
+import { Decoration, DecorationSet } from '@tiptap/pm/view'
 import Placeholder from '@tiptap/extension-placeholder'
 import TextAlign from '@tiptap/extension-text-align'
 import { TextStyle } from '@tiptap/extension-text-style'
@@ -15,7 +17,80 @@ import { FontSize } from '../extensions/fontSize'
 import { useFrenchShortcuts } from '../hooks/useFrenchShortcuts'
 import { copyRichTextToClipboard, copyTextToClipboard } from '../utils/clipboard'
 import { downloadHtmlFile, downloadPlainTextFile } from '../utils/export'
-import type { EditorSnapshot } from '../types'
+import type { EditorSnapshot, ProofreadingMatch } from '../types'
+
+const grammarPluginKey = new PluginKey<{ decorations: DecorationSet }>(
+  'grammarIssues',
+)
+
+function getOffsetPositionMap(editor: NonNullable<ReturnType<typeof useEditor>>) {
+  const positionsByOffset: number[] = []
+  let offset = 0
+  let hasSeenTextBlock = false
+
+  editor.state.doc.descendants((node, pos) => {
+    if (node.isTextblock) {
+      if (hasSeenTextBlock) {
+        offset += 1
+      }
+      hasSeenTextBlock = true
+    }
+
+    if (!node.isText) {
+      return
+    }
+
+    const text = node.text ?? ''
+
+    for (let index = 0; index < text.length; index += 1) {
+      positionsByOffset[offset] = pos + index
+      offset += 1
+    }
+  })
+
+  return positionsByOffset
+}
+
+function getDocRangeFromOffsets(
+  editor: NonNullable<ReturnType<typeof useEditor>>,
+  offset: number,
+  length: number,
+) {
+  const positionsByOffset = getOffsetPositionMap(editor)
+  const start = positionsByOffset[offset]
+  const endPosition = positionsByOffset[offset + Math.max(length - 1, 0)]
+
+  if (start === undefined || endPosition === undefined) {
+    return null
+  }
+
+  return {
+    from: start,
+    to: endPosition + 1,
+  }
+}
+
+function createGrammarDecorations(
+  editor: NonNullable<ReturnType<typeof useEditor>>,
+  matches: ProofreadingMatch[],
+) {
+  const decorations = matches.flatMap((match) => {
+    const range = getDocRangeFromOffsets(editor, match.offset, match.length)
+    if (!range) {
+      return []
+    }
+
+    return [
+      Decoration.inline(range.from, range.to, {
+        class: 'lt-issue',
+        'data-rule-id': match.ruleId,
+        title: match.message,
+      }),
+    ]
+  })
+
+  return DecorationSet.create(editor.state.doc, decorations)
+}
 
 export interface RichTextEditorHandle {
   clearEditor: () => void
@@ -24,13 +99,17 @@ export interface RichTextEditorHandle {
   downloadHtmlFile: (title: string) => void
   downloadTextFile: (title: string) => void
   focus: () => void
+  focusMatch: (offset: number, length: number) => void
   insertCharacter: (character: string) => void
   selectAll: () => void
 }
 
 interface RichTextEditorProps {
   content: string
+  grammarMatches: ProofreadingMatch[]
+  proofreadingLanguage: string
   shortcutsEnabled: boolean
+  spellcheckEnabled?: boolean
   onContentChange: (snapshot: EditorSnapshot) => void
   onStatus?: (message: string) => void
 }
@@ -60,13 +139,67 @@ export const RichTextEditor = forwardRef<
   RichTextEditorHandle,
   RichTextEditorProps
 >(function RichTextEditor(
-  { content, shortcutsEnabled, onContentChange, onStatus },
+  {
+    content,
+    grammarMatches,
+    proofreadingLanguage,
+    shortcutsEnabled,
+    spellcheckEnabled = false,
+    onContentChange,
+    onStatus,
+  },
   ref,
 ) {
   const onContentChangeRef = useRef(onContentChange)
+  const grammarMatchesRef = useRef(grammarMatches)
+  const grammarPluginRef = useRef(
+    new Plugin({
+      key: grammarPluginKey,
+      state: {
+        init: () => ({
+          decorations: DecorationSet.empty,
+        }),
+        apply(transaction, pluginState, _oldState, newState) {
+          const nextMatches = transaction.getMeta(grammarPluginKey) as
+            | ProofreadingMatch[]
+            | undefined
+
+          if (nextMatches) {
+            const editorLike = {
+              state: newState,
+            } as NonNullable<ReturnType<typeof useEditor>>
+            return {
+              decorations: createGrammarDecorations(editorLike, nextMatches),
+            }
+          }
+
+          if (transaction.docChanged) {
+            return {
+              decorations: pluginState.decorations.map(
+                transaction.mapping,
+                transaction.doc,
+              ),
+            }
+          }
+
+          return pluginState
+        },
+      },
+      props: {
+        decorations(state) {
+          return grammarPluginKey.getState(state)?.decorations ?? null
+        },
+      },
+    }),
+  )
+
   useEffect(() => {
     onContentChangeRef.current = onContentChange
   }, [onContentChange])
+
+  useEffect(() => {
+    grammarMatchesRef.current = grammarMatches
+  }, [grammarMatches])
 
   const editor = useEditor({
     immediatelyRender: false,
@@ -92,6 +225,8 @@ export const RichTextEditor = forwardRef<
       attributes: {
         class:
           'tiptap rounded-[26px] px-5 py-5 sm:px-7 sm:py-6 caret-[var(--accent)]',
+        lang: proofreadingLanguage,
+        spellcheck: spellcheckEnabled ? 'true' : 'false',
       },
     },
     onCreate: ({ editor: editorInstance }) => {
@@ -113,11 +248,48 @@ export const RichTextEditor = forwardRef<
       return
     }
 
+    editor.unregisterPlugin(grammarPluginKey)
+    editor.registerPlugin(grammarPluginRef.current)
+
+    editor.view.dispatch(
+      editor.state.tr.setMeta(grammarPluginKey, grammarMatchesRef.current),
+    )
+
+    return () => {
+      editor.unregisterPlugin(grammarPluginKey)
+    }
+  }, [editor])
+
+  useEffect(() => {
+    if (!editor) {
+      return
+    }
+
     const normalizedContent = content || '<p></p>'
     if (editor.getHTML() !== normalizedContent) {
       editor.commands.setContent(normalizedContent, { emitUpdate: false })
     }
   }, [content, editor])
+
+  useEffect(() => {
+    if (!editor) {
+      return
+    }
+
+    editor.view.dom.setAttribute('lang', proofreadingLanguage)
+    editor.view.dom.setAttribute(
+      'spellcheck',
+      spellcheckEnabled ? 'true' : 'false',
+    )
+  }, [editor, proofreadingLanguage, spellcheckEnabled])
+
+  useEffect(() => {
+    if (!editor) {
+      return
+    }
+
+    editor.view.dispatch(editor.state.tr.setMeta(grammarPluginKey, grammarMatches))
+  }, [editor, grammarMatches])
 
   useImperativeHandle(
     ref,
@@ -156,6 +328,26 @@ export const RichTextEditor = forwardRef<
       focus() {
         editor?.chain().focus().run()
       },
+      focusMatch(offset: number, length: number) {
+        if (!editor) {
+          return
+        }
+
+        const range = getDocRangeFromOffsets(editor, offset, length)
+        if (!range) {
+          return
+        }
+
+        editor
+          .chain()
+          .focus()
+          .setTextSelection({ from: range.from, to: range.to })
+          .run()
+        editor.view.dom.scrollIntoView({
+          block: 'center',
+          behavior: 'smooth',
+        })
+      },
       insertCharacter(character: string) {
         editor?.chain().focus().insertContent(character).run()
       },
@@ -168,16 +360,18 @@ export const RichTextEditor = forwardRef<
 
   if (!editor) {
     return (
-      <div className="rounded-[28px] border border-[var(--border-subtle)] bg-[var(--surface-muted)] p-6 text-sm text-[var(--text-secondary)]">
+      <div className="flex h-full items-center justify-center rounded-[28px] border border-[var(--border-subtle)] bg-[var(--surface-muted)] p-6 text-sm text-[var(--text-secondary)]">
         Loading editor…
       </div>
     )
   }
 
   return (
-    <div className="rounded-[28px] border border-[var(--border-subtle)] bg-[linear-gradient(180deg,rgba(255,255,255,0.22),rgba(255,255,255,0.03))] shadow-[var(--shadow-card)]">
+    <div className="flex h-full min-h-0 flex-col rounded-[28px] border border-[var(--border-subtle)] bg-[linear-gradient(180deg,rgba(255,255,255,0.12),rgba(255,255,255,0.02))] shadow-[var(--shadow-card)]">
       <FormattingToolbar editor={editor} />
-      <EditorContent editor={editor} />
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        <EditorContent editor={editor} />
+      </div>
     </div>
   )
 })

@@ -12,6 +12,8 @@ import {
   Download,
   FilePlus2,
   Focus,
+  Languages,
+  Menu,
   MoonStar,
   ScanText,
   SunMedium,
@@ -25,6 +27,9 @@ import {
   RichTextEditor,
   type RichTextEditorHandle,
 } from './components/RichTextEditor'
+import { WritingIssuesPanel } from './components/WritingIssuesPanel'
+import { PROOFREADING_LANGUAGES } from './constants/proofreading'
+import { useLanguageTool } from './hooks/useLanguageTool'
 import { copyTextToClipboard } from './utils/clipboard'
 import {
   createDraftFromImport,
@@ -37,7 +42,12 @@ import {
   saveDrafts,
   savePreferences,
 } from './utils/drafts'
-import type { DraftDocument, EditorSnapshot, Preferences } from './types'
+import type {
+  DraftDocument,
+  EditorSnapshot,
+  Preferences,
+  ProofreadingMatch,
+} from './types'
 
 function App() {
   const [drafts, setDrafts] = useState<DraftDocument[]>(() => loadDrafts())
@@ -68,6 +78,19 @@ function App() {
     ? activeDraft.plainText.trim().split(/\s+/).length
     : 0
   const characterCount = activeDraft.plainText.length
+  const activeProofreadingLanguage =
+    PROOFREADING_LANGUAGES.find(
+      (language) => language.value === preferences.proofreadingLanguage,
+    ) ?? PROOFREADING_LANGUAGES[0]
+  const {
+    error: grammarCheckError,
+    isChecking: isGrammarChecking,
+    matches: grammarMatches,
+  } = useLanguageTool({
+    enabled: preferences.grammarCheckEnabled,
+    language: preferences.proofreadingLanguage,
+    text: activeDraft.plainText,
+  })
 
   function announceStatus(message: string, tone: 'default' | 'success' = 'success') {
     setStatusMessage(message)
@@ -275,6 +298,10 @@ function App() {
     fileInputRef.current?.click()
   }
 
+  function handleJumpToMatch(match: ProofreadingMatch) {
+    editorRef.current?.focusMatch(match.offset, match.length)
+  }
+
   async function handleImportFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0]
     if (!file) {
@@ -295,287 +322,326 @@ function App() {
   }
 
   return (
-    <div className="min-h-screen bg-[var(--bg)] text-[var(--text-primary)] transition-colors duration-300">
-      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top,_rgba(199,214,255,0.22),_transparent_38%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_25%)] dark:bg-[radial-gradient(circle_at_top,_rgba(82,99,143,0.28),_transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_25%)]" />
+    <div className="h-screen overflow-hidden bg-[var(--bg)] text-[var(--text-primary)] transition-colors duration-300">
+      <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_top,_rgba(199,214,255,0.18),_transparent_34%),linear-gradient(180deg,rgba(255,255,255,0.03),transparent_24%)] dark:bg-[radial-gradient(circle_at_top,_rgba(82,99,143,0.22),_transparent_42%),linear-gradient(180deg,rgba(255,255,255,0.02),transparent_24%)]" />
 
-      <div className="relative mx-auto flex min-h-screen w-full max-w-[1600px] flex-col px-4 py-4 sm:px-6 lg:px-8">
-        <header className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-[28px] border border-[var(--border-strong)] bg-[var(--surface)] px-5 py-4 shadow-[var(--shadow-card)] backdrop-blur">
-          <div className="space-y-1">
-            <p className="text-xs font-semibold uppercase tracking-[0.28em] text-[var(--text-muted)]">
-              French typing studio
-            </p>
-            <div className="flex flex-wrap items-center gap-3">
-              <h1 className="font-display text-2xl font-semibold tracking-[-0.04em] text-[var(--text-primary)] sm:text-3xl">
-                Write French naturally, on any keyboard.
-              </h1>
-              <span className="rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-1 text-xs font-medium text-[var(--text-secondary)]">
-                Rich text editor with accent shortcuts
-              </span>
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => setSidebarOpen((current) => !current)}
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-border)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] lg:hidden"
-            >
-              <ScanText size={16} />
-              Drafts
-            </button>
-
-            <button
-              type="button"
-              onClick={handleCreateDraft}
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-border)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
-            >
-              <FilePlus2 size={16} />
-              New draft
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                setPreferences((current) => ({
-                  ...current,
-                  focusMode: !current.focusMode,
-                }))
-              }
+      <div
+        className={clsx(
+          'relative flex h-full gap-3 p-3',
+          preferences.focusMode && 'max-w-[1200px] mx-auto',
+        )}
+      >
+        {!preferences.focusMode && (
+          <>
+            <div
               className={clsx(
-                'inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
-                preferences.focusMode
-                  ? 'border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--text-primary)]'
-                  : 'border-[var(--border-subtle)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:border-[var(--accent-border)] hover:text-[var(--text-primary)]',
+                'fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-sm transition lg:hidden',
+                sidebarOpen
+                  ? 'pointer-events-auto opacity-100'
+                  : 'pointer-events-none opacity-0',
+              )}
+              onClick={() => setSidebarOpen(false)}
+              aria-hidden="true"
+            />
+
+            <aside
+              className={clsx(
+                'z-50 flex w-[18.5rem] flex-col rounded-[28px] border border-[var(--border-strong)] bg-[var(--surface)] shadow-[var(--shadow-card)] backdrop-blur transition lg:static lg:block lg:translate-x-0',
+                sidebarOpen
+                  ? 'fixed inset-y-3 left-3 right-14 translate-x-0'
+                  : 'fixed inset-y-3 left-3 right-14 -translate-x-[110%] lg:translate-x-0',
               )}
             >
-              <Focus size={16} />
-              Focus mode
-            </button>
-
-            <button
-              type="button"
-              onClick={() =>
-                setPreferences((current) => ({
-                  ...current,
-                  theme: current.theme === 'light' ? 'dark' : 'light',
-                }))
-              }
-              className="inline-flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-border)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
-              aria-label={`Switch to ${
-                preferences.theme === 'light' ? 'dark' : 'light'
-              } mode`}
-            >
-              {preferences.theme === 'light' ? (
-                <MoonStar size={16} />
-              ) : (
-                <SunMedium size={16} />
-              )}
-              {preferences.theme === 'light' ? 'Dark' : 'Light'}
-            </button>
-          </div>
-        </header>
-
-        <div
-          className={clsx(
-            'relative grid flex-1 gap-4',
-            preferences.focusMode
-              ? 'grid-cols-1'
-              : 'grid-cols-1 xl:grid-cols-[300px_minmax(0,1fr)]',
-          )}
-        >
-          {!preferences.focusMode && (
-            <>
-              <div
-                className={clsx(
-                  'fixed inset-0 z-40 bg-slate-950/35 backdrop-blur-sm transition lg:hidden',
-                  sidebarOpen
-                    ? 'pointer-events-auto opacity-100'
-                    : 'pointer-events-none opacity-0',
-                )}
-                onClick={() => setSidebarOpen(false)}
-                aria-hidden="true"
+              <DraftSidebar
+                drafts={drafts}
+                activeDraftId={resolvedActiveDraftId}
+                onCreateDraft={handleCreateDraft}
+                onDeleteDraft={handleDeleteDraft}
+                onDuplicateDraft={handleDuplicateDraft}
+                onImportDraft={handleImportRequest}
+                onSelectDraft={handleSelectDraft}
               />
-
-              <aside
-                className={clsx(
-                  'z-50 flex flex-col rounded-[30px] border border-[var(--border-strong)] bg-[var(--surface)] shadow-[var(--shadow-card)] backdrop-blur transition lg:static lg:block lg:translate-x-0',
-                  'lg:min-h-[calc(100vh-9.5rem)]',
-                  sidebarOpen
-                    ? 'fixed inset-y-4 left-4 right-16 translate-x-0'
-                    : 'fixed inset-y-4 left-4 right-16 -translate-x-[110%] lg:translate-x-0',
+            </aside>
+          </>
+        )}
+        <main className="flex min-w-0 flex-1 flex-col overflow-hidden rounded-[28px] border border-[var(--border-strong)] bg-[var(--surface)] shadow-[var(--shadow-card)] backdrop-blur">
+            <div className="flex items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-4 py-3 sm:px-5">
+              <div className="flex min-w-0 items-center gap-3">
+                {!preferences.focusMode && (
+                  <button
+                    type="button"
+                    onClick={() => setSidebarOpen((current) => !current)}
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] text-[var(--text-secondary)] transition hover:border-[var(--accent-border)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)] lg:hidden"
+                    aria-label="Open drafts"
+                  >
+                    <Menu size={18} />
+                  </button>
                 )}
-              >
-                <DraftSidebar
-                  drafts={drafts}
-                  activeDraftId={resolvedActiveDraftId}
-                  onCreateDraft={handleCreateDraft}
-                  onDeleteDraft={handleDeleteDraft}
-                  onDuplicateDraft={handleDuplicateDraft}
-                  onImportDraft={handleImportRequest}
-                  onSelectDraft={handleSelectDraft}
-                />
-              </aside>
-            </>
-          )}
 
-          <main className="min-w-0">
-            <section className="rounded-[32px] border border-[var(--border-strong)] bg-[var(--surface)] shadow-[var(--shadow-card)] backdrop-blur">
-              <div className="border-b border-[var(--border-subtle)] px-5 py-5 sm:px-7">
-                <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
-                  <div className="min-w-0 flex-1 space-y-2">
-                    <label
-                      htmlFor="draft-title"
-                      className="text-xs font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]"
-                    >
-                      Current draft
-                    </label>
-                    <input
-                      id="draft-title"
-                      value={activeDraft.title}
-                      onChange={(event) => handleRenameDraft(event.target.value)}
-                      className="w-full rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-4 py-3 font-display text-2xl font-semibold tracking-[-0.04em] text-[var(--text-primary)] outline-none transition placeholder:text-[var(--text-muted)] focus:border-[var(--accent-border)] focus:ring-2 focus:ring-[var(--focus-ring)] sm:text-3xl"
-                      placeholder="Untitled note"
-                    />
-                    <p className="text-sm text-[var(--text-secondary)]">
-                      Local-first writing workspace for French accents, ligatures,
-                      and polished text formatting.
-                    </p>
-                  </div>
-
-                  <div className="flex flex-wrap items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={handleCopyRichText}
-                      className="action-pill"
-                    >
-                      <Clipboard size={16} />
-                      Copy rich text
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleCopyPlainText}
-                      className="action-pill"
-                    >
-                      <ClipboardType size={16} />
-                      Copy plain text
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSelectAll}
-                      className="action-pill"
-                    >
-                      <ScanText size={16} />
-                      Select all
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDownloadText}
-                      className="action-pill"
-                    >
-                      <Download size={16} />
-                      .txt
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleDownloadHtml}
-                      className="action-pill"
-                    >
-                      <Download size={16} />
-                      .html
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleClearEditor}
-                      className="action-pill"
-                    >
-                      <Trash2 size={16} />
-                      Clear
-                    </button>
-                  </div>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-[var(--text-muted)]">
+                    French Typing Studio
+                  </p>
+                  <input
+                    id="draft-title"
+                    value={activeDraft.title}
+                    onChange={(event) => handleRenameDraft(event.target.value)}
+                    className="w-full border-0 bg-transparent px-0 pt-0.5 font-display text-xl font-semibold tracking-[-0.04em] text-[var(--text-primary)] outline-none placeholder:text-[var(--text-muted)] sm:text-2xl"
+                    placeholder="Untitled note"
+                  />
                 </div>
               </div>
 
-              <div className="border-b border-[var(--border-subtle)] px-5 py-4 sm:px-7">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <label className="inline-flex cursor-pointer items-center gap-3 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-border)]">
-                      <span
-                        className={clsx(
-                          'relative inline-flex h-6 w-11 items-center rounded-full transition',
-                          preferences.shortcutsEnabled
-                            ? 'bg-[var(--accent)]'
-                            : 'bg-slate-300/80 dark:bg-slate-700/90',
-                        )}
-                      >
-                        <span
-                          className={clsx(
-                            'inline-block h-5 w-5 rounded-full bg-white shadow-sm transition',
-                            preferences.shortcutsEnabled
-                              ? 'translate-x-5'
-                              : 'translate-x-1',
-                          )}
-                        />
-                      </span>
-                      <span>Accent shortcuts</span>
-                      <input
-                        type="checkbox"
-                        checked={preferences.shortcutsEnabled}
-                        onChange={() =>
-                          setPreferences((current) => ({
-                            ...current,
-                            shortcutsEnabled: !current.shortcutsEnabled,
-                          }))
-                        }
-                        className="sr-only"
-                        aria-label="Toggle accent keyboard shortcuts"
-                      />
-                    </label>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCreateDraft}
+                  className="inline-flex h-10 items-center gap-2 rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-border)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                >
+                  <FilePlus2 size={16} />
+                  <span className="hidden sm:inline">New</span>
+                </button>
 
-                    <button
-                      type="button"
-                      onClick={() => setHelpOpen(true)}
-                      className="inline-flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-border)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
-                    >
-                      <CircleHelp size={16} />
-                      Keyboard help
-                    </button>
-                  </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPreferences((current) => ({
+                      ...current,
+                      focusMode: !current.focusMode,
+                    }))
+                  }
+                  className={clsx(
+                    'inline-flex h-10 items-center gap-2 rounded-2xl border px-3 text-sm font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]',
+                    preferences.focusMode
+                      ? 'border-[var(--accent-border)] bg-[var(--accent-soft)] text-[var(--text-primary)]'
+                      : 'border-[var(--border-subtle)] bg-[var(--surface-muted)] text-[var(--text-secondary)] hover:border-[var(--accent-border)] hover:text-[var(--text-primary)]',
+                  )}
+                >
+                  <Focus size={16} />
+                  <span className="hidden sm:inline">Focus</span>
+                </button>
 
-                  <div className="flex flex-wrap items-center gap-3 text-sm text-[var(--text-secondary)]">
-                    <span>{wordCount} words</span>
-                    <span className="h-1 w-1 rounded-full bg-[var(--text-muted)]" />
-                    <span>{characterCount} characters</span>
-                    <span className="h-1 w-1 rounded-full bg-[var(--text-muted)]" />
+                <button
+                  type="button"
+                  onClick={() =>
+                    setPreferences((current) => ({
+                      ...current,
+                      theme: current.theme === 'light' ? 'dark' : 'light',
+                    }))
+                  }
+                  className="inline-flex h-10 w-10 items-center justify-center rounded-2xl border border-[var(--border-subtle)] bg-[var(--surface-muted)] text-[var(--text-secondary)] transition hover:border-[var(--accent-border)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                  aria-label={`Switch to ${
+                    preferences.theme === 'light' ? 'dark' : 'light'
+                  } mode`}
+                >
+                  {preferences.theme === 'light' ? (
+                    <MoonStar size={16} />
+                  ) : (
+                    <SunMedium size={16} />
+                  )}
+                </button>
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--border-subtle)] px-4 py-3 sm:px-5">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleCopyRichText}
+                  className="action-pill"
+                >
+                  <Clipboard size={16} />
+                  <span className="hidden sm:inline">Rich text</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyPlainText}
+                  className="action-pill"
+                >
+                  <ClipboardType size={16} />
+                  <span className="hidden sm:inline">Plain text</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleSelectAll}
+                  className="action-pill"
+                >
+                  <ScanText size={16} />
+                  <span className="hidden sm:inline">Select all</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleClearEditor}
+                  className="action-pill"
+                >
+                  <Trash2 size={16} />
+                  <span className="hidden sm:inline">Clear</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadText}
+                  className="action-pill"
+                  aria-label="Download as txt"
+                >
+                  <Download size={16} />
+                  <span>.txt</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleDownloadHtml}
+                  className="action-pill"
+                  aria-label="Download as html"
+                >
+                  <Download size={16} />
+                  <span>.html</span>
+                </button>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2">
+                <label className="inline-flex items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)]">
+                  <Languages size={15} />
+                  <span className="sr-only">Proofreading language</span>
+                  <select
+                    aria-label="Proofreading language"
+                    value={preferences.proofreadingLanguage}
+                    className="bg-transparent outline-none"
+                    onChange={(event) =>
+                      setPreferences((current) => ({
+                        ...current,
+                        proofreadingLanguage: event.target.value,
+                      }))
+                    }
+                  >
+                    {PROOFREADING_LANGUAGES.map((language) => (
+                      <option key={language.value} value={language.value}>
+                        {language.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-border)]">
+                  <span
+                    className={clsx(
+                      'relative inline-flex h-5 w-9 items-center rounded-full transition',
+                      preferences.grammarCheckEnabled
+                        ? 'bg-[var(--accent)]'
+                        : 'bg-slate-300/80 dark:bg-slate-700/90',
+                    )}
+                  >
                     <span
                       className={clsx(
-                        'rounded-full px-3 py-1 text-xs font-semibold',
-                        statusTone === 'success'
-                          ? 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-300'
-                          : 'bg-[var(--surface-muted)] text-[var(--text-secondary)]',
+                        'inline-block h-4 w-4 rounded-full bg-white shadow-sm transition',
+                        preferences.grammarCheckEnabled
+                          ? 'translate-x-4'
+                          : 'translate-x-1',
                       )}
-                    >
-                      {statusMessage}
-                    </span>
-                  </div>
-                </div>
-              </div>
+                    />
+                  </span>
+                  <span>Check</span>
+                  <input
+                    type="checkbox"
+                    checked={preferences.grammarCheckEnabled}
+                    onChange={() =>
+                      setPreferences((current) => ({
+                        ...current,
+                        grammarCheckEnabled: !current.grammarCheckEnabled,
+                      }))
+                    }
+                    className="sr-only"
+                    aria-label="Toggle writing check"
+                  />
+                </label>
 
-              <div className="px-3 pb-3 pt-2 sm:px-4 sm:pb-4">
+                <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-border)]">
+                  <span
+                    className={clsx(
+                      'relative inline-flex h-5 w-9 items-center rounded-full transition',
+                      preferences.shortcutsEnabled
+                        ? 'bg-[var(--accent)]'
+                        : 'bg-slate-300/80 dark:bg-slate-700/90',
+                    )}
+                  >
+                    <span
+                      className={clsx(
+                        'inline-block h-4 w-4 rounded-full bg-white shadow-sm transition',
+                        preferences.shortcutsEnabled
+                          ? 'translate-x-4'
+                          : 'translate-x-1',
+                      )}
+                    />
+                  </span>
+                  <span>Shortcuts</span>
+                  <input
+                    type="checkbox"
+                    checked={preferences.shortcutsEnabled}
+                    onChange={() =>
+                      setPreferences((current) => ({
+                        ...current,
+                        shortcutsEnabled: !current.shortcutsEnabled,
+                      }))
+                    }
+                    className="sr-only"
+                    aria-label="Toggle accent keyboard shortcuts"
+                  />
+                </label>
+
+                <button
+                  type="button"
+                  onClick={() => setHelpOpen(true)}
+                  className="inline-flex h-10 items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 text-sm font-medium text-[var(--text-secondary)] transition hover:border-[var(--accent-border)] hover:text-[var(--text-primary)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--focus-ring)]"
+                >
+                  <CircleHelp size={16} />
+                  <span className="hidden sm:inline">Help</span>
+                </button>
+
+                <div className="hidden items-center gap-2 rounded-full border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-2 text-sm text-[var(--text-secondary)] md:inline-flex">
+                  <span>{wordCount}w</span>
+                  <span className="h-1 w-1 rounded-full bg-[var(--text-muted)]" />
+                  <span>{characterCount}c</span>
+                </div>
+
+                <span
+                  className={clsx(
+                    'rounded-full px-3 py-2 text-xs font-semibold',
+                    statusTone === 'success'
+                      ? 'bg-emerald-500/12 text-emerald-600 dark:text-emerald-300'
+                      : 'bg-[var(--surface-muted)] text-[var(--text-secondary)]',
+                  )}
+                >
+                  {statusMessage}
+                </span>
+              </div>
+            </div>
+
+            <div className="min-h-0 flex-1 px-3 pt-3 sm:px-4">
+              <div className="h-full overflow-hidden rounded-[24px] border border-[var(--border-subtle)] bg-[var(--editor)]">
                 <RichTextEditor
                   ref={editorRef}
                   content={activeDraft.html}
+                  grammarMatches={grammarMatches}
+                  proofreadingLanguage={preferences.proofreadingLanguage}
                   shortcutsEnabled={preferences.shortcutsEnabled}
                   onContentChange={updateActiveDraft}
                   onStatus={announceStatus}
                 />
               </div>
+            </div>
 
-              <div className="border-t border-[var(--border-subtle)] px-3 py-3 sm:px-4">
+            <div className="border-t border-[var(--border-subtle)] px-3 py-3 sm:px-4">
+              <div className="space-y-3 rounded-[22px] border border-[var(--border-subtle)] bg-[var(--surface-muted)] px-3 py-3">
                 <FrenchCharacterToolbar onCharacterAction={handleInsertCharacter} />
+                <WritingIssuesPanel
+                  enabled={preferences.grammarCheckEnabled}
+                  error={grammarCheckError}
+                  isChecking={isGrammarChecking}
+                  languageLabel={activeProofreadingLanguage.label}
+                  matches={grammarMatches}
+                  onJumpToMatch={handleJumpToMatch}
+                />
               </div>
-            </section>
+            </div>
           </main>
-        </div>
       </div>
 
       <HelpModal

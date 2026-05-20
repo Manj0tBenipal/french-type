@@ -14,6 +14,8 @@ export interface Preferences {
   theme: ThemeMode
   shortcutsEnabled: boolean
   focusMode: boolean
+  grammarCheckEnabled: boolean
+  proofreadingLanguage: string
 }
 
 export interface EditorSnapshot {
@@ -21,4 +23,17 @@ export interface EditorSnapshot {
   plainText: string
   wordCount: number
   characterCount: number
+}
+
+export interface ProofreadingMatch {
+  id: string
+  message: string
+  shortMessage: string
+  offset: number
+  length: number
+  replacements: string[]
+  contextText: string
+  contextOffset: number
+  ruleId: string
+  category: string
 }

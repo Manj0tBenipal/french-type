@@ -22,6 +22,7 @@
   --accent-soft: rgba(32, 79, 143, 0.1);
   --accent-border: rgba(32, 79, 143, 0.28);
   --focus-ring: rgba(32, 79, 143, 0.26);
+  --editor: rgba(255, 255, 255, 0.56);
   --shadow-card:
     0 24px 60px rgba(22, 33, 56, 0.08),
     inset 0 1px 0 rgba(255, 255, 255, 0.34);
@@ -41,6 +42,7 @@
   --accent-soft: rgba(138, 198, 255, 0.14);
   --accent-border: rgba(138, 198, 255, 0.28);
   --focus-ring: rgba(138, 198, 255, 0.28);
+  --editor: rgba(16, 24, 36, 0.72);
   --shadow-card:
     0 26px 60px rgba(1, 7, 16, 0.38),
     inset 0 1px 0 rgba(255, 255, 255, 0.03);
@@ -84,7 +86,7 @@ select {
 }
 
 .tiptap {
-  min-height: 26rem;
+  min-height: 100%;
   outline: none;
   color: var(--text-primary);
 }
@@ -155,4 +157,18 @@ select {
 
 .tiptap ::selection {
   background: rgba(138, 198, 255, 0.22);
+}
+
+.lt-issue {
+  border-radius: 0.15rem;
+  background-image: linear-gradient(
+    to top,
+    rgba(239, 68, 68, 0.2),
+    rgba(239, 68, 68, 0.2)
+  );
+  background-position: 0 100%;
+  background-repeat: repeat-x;
+  background-size: 100% 0.5em;
+  text-decoration: underline wavy rgba(239, 68, 68, 0.9);
+  text-underline-offset: 0.22em;
 }

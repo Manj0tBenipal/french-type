@@ -88,6 +88,8 @@ export function loadPreferences(): Preferences {
     theme: 'light',
     shortcutsEnabled: true,
     focusMode: false,
+    grammarCheckEnabled: true,
+    proofreadingLanguage: 'fr',
   }
   const storedPreferences = window.localStorage.getItem(PREFERENCES_STORAGE_KEY)
 

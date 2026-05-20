@@ -13,8 +13,10 @@ export function useFrenchShortcuts({
   enabled,
   onStatus,
 }: UseFrenchShortcutsOptions) {
-  const sequenceRef = useRef({
+  const shortcutInsertionRef = useRef({
     code: '',
+    from: -1,
+    to: -1,
     index: -1,
   })
   const onStatusRef = useRef(onStatus)
@@ -25,7 +27,12 @@ export function useFrenchShortcuts({
 
   useEffect(() => {
     function resetSequence() {
-      sequenceRef.current = { code: '', index: -1 }
+      shortcutInsertionRef.current = {
+        code: '',
+        from: -1,
+        to: -1,
+        index: -1,
+      }
     }
 
     function handleKeyDown(event: KeyboardEvent) {
@@ -40,35 +47,69 @@ export function useFrenchShortcuts({
 
       event.preventDefault()
 
-      const nextIndex =
-        sequenceRef.current.code === event.code
-          ? (sequenceRef.current.index + 1) % sequence.length
-          : 0
+      const { from, to } = editor.state.selection
+      const activeInsertion = shortcutInsertionRef.current
+      const currentTrackedCharacter =
+        activeInsertion.from >= 0 && activeInsertion.to >= activeInsertion.from
+          ? editor.state.doc.textBetween(
+              activeInsertion.from,
+              activeInsertion.to,
+              '',
+              '',
+            )
+          : ''
+      const canAlterPreviousShortcutCharacter =
+        from === to &&
+        activeInsertion.code === event.code &&
+        activeInsertion.to === from &&
+        currentTrackedCharacter.length > 0
 
-      sequenceRef.current = {
-        code: event.code,
-        index: nextIndex,
-      }
+      const nextIndex = canAlterPreviousShortcutCharacter
+        ? (activeInsertion.index + 1) % sequence.length
+        : 0
 
       const value = sequence[nextIndex]
       const output = event.shiftKey ? toFrenchUppercase(value) : value
+
+      // Once an accent character was produced by a shortcut, later presses on
+      // the same shortcut mutate that character in place instead of appending.
+      if (canAlterPreviousShortcutCharacter) {
+        editor
+          .chain()
+          .focus()
+          .insertContentAt(
+            { from: activeInsertion.from, to: activeInsertion.to },
+            output,
+          )
+          .setTextSelection(activeInsertion.from + output.length)
+          .run()
+
+        shortcutInsertionRef.current = {
+          code: event.code,
+          from: activeInsertion.from,
+          to: activeInsertion.from + output.length,
+          index: nextIndex,
+        }
+        onStatusRef.current?.(`Updated to ${output}`)
+        return
+      }
+
       editor.chain().focus().insertContent(output).run()
+
+      shortcutInsertionRef.current = {
+        code: event.code,
+        from,
+        to: from + output.length,
+        index: nextIndex,
+      }
       onStatusRef.current?.(`Inserted ${output}`)
     }
 
-    function handleKeyUp(event: KeyboardEvent) {
-      if (event.key === 'Alt') {
-        resetSequence()
-      }
-    }
-
     window.addEventListener('keydown', handleKeyDown)
-    window.addEventListener('keyup', handleKeyUp)
     window.addEventListener('blur', resetSequence)
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown)
-      window.removeEventListener('keyup', handleKeyUp)
       window.removeEventListener('blur', resetSequence)
     }
   }, [editor, enabled])
